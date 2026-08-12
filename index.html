@@ -1384,9 +1384,9 @@
     $(id).addEventListener("input", onCustomColorChange);
   });
 
-  /* ================= FONDO DE PALABRAS ================= */
-  function getWords(){ return load("palabrasFondo", []); }
-  function setWords(v){ save("palabrasFondo", v); }
+  /* ================= FONDO DE PALABRAS (compartido) ================= */
+  async function getWords(){ return await getConfig("palabrasFondo", []); }
+  async function setWords(v){ return await setConfig("palabrasFondo", v); }
 
   function makeFloatingEl(kind, content, sizeMin, sizeMax){
     const el = document.createElement("span");
@@ -1410,8 +1410,8 @@
     return el;
   }
 
-  function renderWordsBg(){
-    const words = getWords();
+  async function renderWordsBg(){
+    const words = await getWords();
     const container = $("wordsBg");
     if(!container) return;
     container.innerHTML = "";
@@ -1449,17 +1449,20 @@
     });
   });
 
-  function syncWordsInput(){
+  async function syncWordsInput(){
     const ta = $("wordsInput");
-    if(ta) ta.value = getWords().join("\n");
+    if(ta) ta.value = (await getWords()).join("\n");
   }
 
   const saveWordsBtn = $("saveWordsBtn");
   if(saveWordsBtn){
-    saveWordsBtn.addEventListener("click", ()=>{
+    saveWordsBtn.addEventListener("click", async ()=>{
       const raw = $("wordsInput").value;
       const words = raw.split("\n").map(w=>w.trim()).filter(Boolean).slice(0,40);
-      setWords(words);
+      const originalLabel = saveWordsBtn.textContent;
+      saveWordsBtn.textContent = "Guardando...";
+      await setWords(words);
+      saveWordsBtn.textContent = originalLabel;
       renderWordsBg();
     });
   }
@@ -1483,6 +1486,7 @@
     sb.channel("cambios-fotos").on("postgres_changes", {event:"*", schema:"public", table:"fotos"}, ()=>renderGallery()).subscribe();
     sb.channel("cambios-retos").on("postgres_changes", {event:"*", schema:"public", table:"retos"}, ()=>renderChallenges()).subscribe();
     sb.channel("cambios-espiritus").on("postgres_changes", {event:"*", schema:"public", table:"espiritus"}, ()=>renderSpirits()).subscribe();
+    sb.channel("cambios-config").on("postgres_changes", {event:"*", schema:"public", table:"config", filter:"clave=eq.palabrasFondo"}, ()=>{ renderWordsBg(); syncWordsInput(); }).subscribe();
   }
 
   function initApp(){
