@@ -191,12 +191,12 @@
   }
 
   /* ---------- GALLERY (estilo Polaroid retro) ---------- */
-  .gallery-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:26px 20px; padding-top:6px;}
+  .gallery-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:32px 22px; padding-top:16px;}
   .photo-tile{
     background:#FBFAF6; padding:10px 10px 0 10px; border-radius:3px;
     box-shadow:0 10px 18px rgba(0,0,0,.28), 0 2px 5px rgba(0,0,0,.18);
     position:relative; overflow:hidden;
-    transform:rotate(var(--rot,0deg));
+    transform:rotate(var(--rot,0deg)) translateY(var(--shift,0px));
   }
   .photo-tile .photo-inner{
     aspect-ratio:1; overflow:hidden; background:repeating-conic-gradient(#e6e2d8 0% 25%, #ddd8cb 0% 50%) 50%/16px 16px;
@@ -998,6 +998,12 @@
   }
 
   let currentPhotos = [];
+  function hashNum(str){
+    let h = 0;
+    for(let i=0;i<str.length;i++){ h = (Math.imul(31,h) + str.charCodeAt(i))|0; }
+    return Math.abs(h);
+  }
+
   async function renderGallery(){
     const photos = await getPhotos();
     currentPhotos = photos;
@@ -1007,8 +1013,10 @@
       return;
     }
     grid.innerHTML = photos.map(p=>{
-      const rot = ((hash(p.id).charCodeAt(0)||0) % 10) - 5;
-      return '<div class="photo-tile" data-id="'+p.id+'" style="--rot:'+rot+'deg;">'
+      const n = hashNum(p.id);
+      const rot = (n % 26) - 13;
+      const shift = ((n >> 3) % 21) - 10;
+      return '<div class="photo-tile" data-id="'+p.id+'" style="--rot:'+rot+'deg; --shift:'+shift+'px;">'
         + '<button class="photo-del-btn" data-id="'+p.id+'" title="Quitar">✕</button>'
         + '<div class="photo-inner"><img src="'+p.data+'" alt="foto" loading="lazy"></div>'
         + '<div class="cap">'+(p.caption ? escapeHtml(p.caption) : '')+'</div>'
