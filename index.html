@@ -273,9 +273,9 @@
   .spirits-group-form input{ flex:1; min-width:180px; background:var(--card); }
 
   .spirit-group-block{
-    margin-bottom:22px; background:var(--card); border-radius:20px; padding:16px 16px 18px;
-    box-shadow:0 6px 16px rgba(0,0,0,.08); border-left:5px solid var(--primary);
-    transition:box-shadow .2s ease, transform .15s ease, opacity .2s ease;
+    margin-bottom:22px; background:rgba(0,0,0,.35); border-radius:20px; padding:16px 16px 18px;
+    box-shadow:0 6px 16px rgba(0,0,0,.14); border-left:5px solid var(--primary);
+    transition:box-shadow .2s ease, transform .15s ease, opacity .2s ease, background-color .3s ease;
   }
   .spirit-group-block.sin-grupo{ border-left-color:transparent; border:1px dashed rgba(120,110,100,.35); box-shadow:none; background:transparent; }
   .spirit-group-block.first-paint{ animation:groupFadeIn .5s cubic-bezier(.2,.8,.2,1) both; }
@@ -292,18 +292,20 @@
   .spirit-group-header{ display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
   .spirit-group-handle{
     width:24px; height:34px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
-    font-size:1.2rem; opacity:.35; letter-spacing:-2px; cursor:grab;
+    font-size:1.2rem; opacity:.4; letter-spacing:-2px; cursor:grab; color:#fff;
   }
   .spirit-group-titles{ flex:1; min-width:120px; }
-  .spirit-group-header h3{ margin:0; font-size:1.25rem; color:var(--accent); line-height:1.15; }
-  .spirit-group-header .spirit-group-count{ font-size:.72rem; opacity:.55; font-weight:700; }
-  .spirit-group-mini-bar{ width:100%; max-width:220px; height:6px; background:var(--bg-soft); border-radius:6px; overflow:hidden; margin-top:5px; }
+  .spirit-group-header h3{ margin:0; font-size:1.25rem; color:#fff; line-height:1.15; }
+  .spirit-group-header .spirit-group-count{ font-size:.72rem; opacity:.65; font-weight:700; color:#fff; }
+  .spirit-group-mini-bar{ width:100%; max-width:220px; height:6px; background:rgba(255,255,255,.18); border-radius:6px; overflow:hidden; margin-top:5px; }
   .spirit-group-mini-fill{ height:100%; background:var(--primary); border-radius:6px; transition:width .5s ease; }
   .spirit-group-del{
-    width:28px; height:28px; border-radius:50%; background:var(--bg-soft); flex-shrink:0;
-    display:flex; align-items:center; justify-content:center; padding:0; font-size:.75rem; opacity:.6;
+    width:28px; height:28px; border-radius:50%; background:rgba(255,255,255,.14); color:#fff; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; padding:0; font-size:.75rem; opacity:.7;
   }
-  .spirit-group-del:hover{ opacity:1; background:rgba(214,69,69,.15); color:#D64545; }
+  .spirit-group-del:hover{ opacity:1; background:rgba(214,69,69,.35); color:#fff; }
+  .sin-grupo .spirit-group-header h3{ color:var(--accent); }
+  .sin-grupo .spirit-group-header .spirit-group-count{ color:var(--text); opacity:.55; }
   .spirits-dropzone{
     display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:16px;
     border-radius:16px; transition:background-color .2s ease, box-shadow .2s ease; padding:4px;
