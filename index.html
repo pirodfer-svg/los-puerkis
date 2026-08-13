@@ -275,20 +275,24 @@
   .spirit-group-block{
     margin-bottom:22px; background:var(--card); border-radius:20px; padding:16px 16px 18px;
     box-shadow:0 6px 16px rgba(0,0,0,.08); border-left:5px solid var(--primary);
-    animation:groupFadeIn .5s cubic-bezier(.2,.8,.2,1) both;
+    transition:box-shadow .2s ease, transform .15s ease, opacity .2s ease;
   }
   .spirit-group-block.sin-grupo{ border-left-color:transparent; border:1px dashed rgba(120,110,100,.35); box-shadow:none; background:transparent; }
+  .spirit-group-block.first-paint{ animation:groupFadeIn .5s cubic-bezier(.2,.8,.2,1) both; }
   @keyframes groupFadeIn{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
-  .spirit-group-block:nth-child(1){ animation-delay:.02s; }
-  .spirit-group-block:nth-child(2){ animation-delay:.08s; }
-  .spirit-group-block:nth-child(3){ animation-delay:.14s; }
-  .spirit-group-block:nth-child(4){ animation-delay:.2s; }
-  .spirit-group-block:nth-child(5){ animation-delay:.26s; }
+  .spirit-group-block.first-paint:nth-child(1){ animation-delay:.02s; }
+  .spirit-group-block.first-paint:nth-child(2){ animation-delay:.08s; }
+  .spirit-group-block.first-paint:nth-child(3){ animation-delay:.14s; }
+  .spirit-group-block.first-paint:nth-child(4){ animation-delay:.2s; }
+  .spirit-group-block.first-paint:nth-child(5){ animation-delay:.26s; }
+  .spirit-group-block[draggable="true"]{ cursor:grab; }
+  .spirit-group-block.dragging-group{ opacity:.4; cursor:grabbing; }
+  .spirit-group-block.group-drag-over{ box-shadow:inset 0 0 0 3px var(--primary), 0 6px 16px rgba(0,0,0,.08); transform:scale(1.01); }
 
   .spirit-group-header{ display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
-  .spirit-group-icon{
-    width:34px; height:34px; border-radius:10px; background:var(--bg-soft); flex-shrink:0;
-    display:flex; align-items:center; justify-content:center; font-size:1.05rem;
+  .spirit-group-handle{
+    width:24px; height:34px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    font-size:1.2rem; opacity:.35; letter-spacing:-2px; cursor:grab;
   }
   .spirit-group-titles{ flex:1; min-width:120px; }
   .spirit-group-header h3{ margin:0; font-size:1.25rem; color:var(--accent); line-height:1.15; }
@@ -1312,12 +1316,12 @@
 
   /* --- Grupos --- */
   async function getGroups(){
-    const { data, error } = await sb.from("grupos_espiritus").select("*").order("created_at", {ascending:true});
+    const { data, error } = await sb.from("grupos_espiritus").select("*").order("orden", {ascending:true, nullsFirst:false}).order("created_at", {ascending:true});
     if(error){ console.error(error); return []; }
     return data;
   }
   async function addGroup(nombre){
-    const { error } = await sb.from("grupos_espiritus").insert({ id:uid(), nombre });
+    const { error } = await sb.from("grupos_espiritus").insert({ id:uid(), nombre, orden: Date.now() });
     if(error){ alert("No se pudo crear el grupo."); console.error(error); return false; }
     return true;
   }
@@ -1325,6 +1329,11 @@
     await sb.from("espiritus").update({ grupo_id:null }).eq("grupo_id", id);
     const { error } = await sb.from("grupos_espiritus").delete().eq("id", id);
     if(error) console.error(error);
+  }
+  async function reorderGroups(orderedIds){
+    await Promise.all(orderedIds.map((id, i)=>
+      sb.from("grupos_espiritus").update({ orden: (i+1) * 1000 }).eq("id", id)
+    ));
   }
   async function assignSpiritGroup(spiritId, grupoId){
     const { error } = await sb.from("espiritus").update({ grupo_id: grupoId }).eq("id", spiritId);
@@ -1366,9 +1375,14 @@
   let spiritsFilter = "todos";
   let draggedSpiritId = null;
   let spiritsAnimatingCount = 0;
+  let spiritsRenderedOnce = false;
+  let spiritsRenderDebounce = null;
   function scheduleSpiritsRender(){
-    if(spiritsAnimatingCount > 0){ setTimeout(scheduleSpiritsRender, 700); return; }
-    renderSpirits();
+    clearTimeout(spiritsRenderDebounce);
+    spiritsRenderDebounce = setTimeout(()=>{
+      if(spiritsAnimatingCount > 0){ scheduleSpiritsRender(); return; }
+      renderSpirits();
+    }, 250);
   }
   let selectionMode = false;
   let selectedSpiritIds = new Set();
@@ -1501,6 +1515,7 @@
 
   function wireDropzone(zone){
     zone.addEventListener("dragover", (e)=>{
+      if(e.dataTransfer.types && e.dataTransfer.types.includes("text/group-id")) return;
       e.preventDefault();
       zone.classList.add("drag-over");
     });
@@ -1508,6 +1523,7 @@
       zone.classList.remove("drag-over");
     });
     zone.addEventListener("drop", async (e)=>{
+      if(e.dataTransfer.types && e.dataTransfer.types.includes("text/group-id")) return;
       e.preventDefault();
       zone.classList.remove("drag-over");
       const id = e.dataTransfer.getData("text/plain") || draggedSpiritId;
@@ -1544,6 +1560,7 @@
     if(spiritsFilter === "tenemos") filtered = all.filter(s=>s.checked);
     if(spiritsFilter === "faltan") filtered = all.filter(s=>!s.checked);
 
+    const fpClass = spiritsRenderedOnce ? "" : " first-paint";
     const blocks = [];
 
     groups.forEach(g=>{
@@ -1552,9 +1569,9 @@
       const doneInGroup = allInGroup.filter(s=>s.checked).length;
       const groupPct = allInGroup.length ? Math.round((doneInGroup/allInGroup.length)*100) : 0;
       blocks.push(
-        '<div class="spirit-group-block">'
+        '<div class="spirit-group-block' + fpClass + '" draggable="true" data-group-id="' + g.id + '">'
           + '<div class="spirit-group-header">'
-            + '<span class="spirit-group-icon">🗂️</span>'
+            + '<span class="spirit-group-handle" title="Arrastra para reordenar">⠿</span>'
             + '<div class="spirit-group-titles">'
               + '<h3>' + escapeHtml(g.nombre) + ' <span class="spirit-group-count">(' + doneInGroup + '/' + allInGroup.length + ')</span></h3>'
               + '<div class="spirit-group-mini-bar"><div class="spirit-group-mini-fill" style="width:' + groupPct + '%;"></div></div>'
@@ -1570,9 +1587,8 @@
 
     const sinGrupo = filtered.filter(s=>!s.grupoId || !groups.some(g=>g.id === s.grupoId));
     blocks.push(
-      '<div class="spirit-group-block sin-grupo">'
+      '<div class="spirit-group-block sin-grupo' + fpClass + '">'
         + '<div class="spirit-group-header">'
-          + '<span class="spirit-group-icon">👻</span>'
           + '<div class="spirit-group-titles"><h3>Sin grupo <span class="spirit-group-count">(' + sinGrupo.length + ')</span></h3></div>'
         + '</div>'
         + '<div class="spirits-dropzone" data-group="">'
@@ -1582,6 +1598,7 @@
     );
 
     wrap.innerHTML = blocks.join("");
+    spiritsRenderedOnce = true;
 
     wrap.querySelectorAll(".spirits-dropzone").forEach(zone=>{
       wireDropzone(zone);
@@ -1593,6 +1610,44 @@
           await deleteGroup(btn.dataset.id);
           renderSpirits();
         }
+      });
+    });
+
+    let draggedGroupId = null;
+    wrap.querySelectorAll('.spirit-group-block[draggable="true"]').forEach(block=>{
+      block.addEventListener("dragstart", (e)=>{
+        draggedGroupId = block.dataset.groupId;
+        block.classList.add("dragging-group");
+        e.dataTransfer.setData("text/group-id", draggedGroupId);
+        e.dataTransfer.effectAllowed = "move";
+      });
+      block.addEventListener("dragend", ()=>{
+        block.classList.remove("dragging-group");
+        draggedGroupId = null;
+      });
+      block.addEventListener("dragover", (e)=>{
+        if(!draggedGroupId || draggedGroupId === block.dataset.groupId) return;
+        e.preventDefault();
+        block.classList.add("group-drag-over");
+      });
+      block.addEventListener("dragleave", ()=>{
+        block.classList.remove("group-drag-over");
+      });
+      block.addEventListener("drop", async (e)=>{
+        block.classList.remove("group-drag-over");
+        const sourceId = e.dataTransfer.getData("text/group-id") || draggedGroupId;
+        const targetId = block.dataset.groupId;
+        if(!sourceId || sourceId === targetId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const ids = groups.map(g=>g.id);
+        const from = ids.indexOf(sourceId);
+        const to = ids.indexOf(targetId);
+        if(from === -1 || to === -1) return;
+        ids.splice(from, 1);
+        ids.splice(to, 0, sourceId);
+        await reorderGroups(ids);
+        renderSpirits();
       });
     });
   }
