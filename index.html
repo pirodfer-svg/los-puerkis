@@ -263,6 +263,24 @@
     justify-content:center; z-index:4; box-shadow:0 2px 6px rgba(0,0,0,.3); opacity:.85; transition:opacity .2s ease, transform .15s ease;
   }
   .spirit-move-btn:hover{ opacity:1; transform:scale(1.15); }
+  .spirits-bulk-bar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--bg-soft);
+    border-radius:14px; padding:10px 14px; margin-bottom:16px; font-size:.82rem; font-weight:700;
+  }
+  .spirit-card.selectable{ cursor:pointer; }
+  .spirit-select-overlay{
+    position:absolute; inset:0; z-index:10; border-radius:20px;
+    display:flex; align-items:flex-start; justify-content:flex-end; padding:6px;
+    background:rgba(0,0,0,0); transition:background .2s ease;
+  }
+  .spirit-card.selected .spirit-select-overlay{ background:rgba(80,60,180,.28); }
+  .spirit-card.selected{ outline:3px solid var(--primary); outline-offset:2px; }
+  .spirit-select-badge{
+    width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,.85);
+    border:2px solid var(--primary); display:flex; align-items:center; justify-content:center;
+    font-size:.7rem; font-weight:900; color:var(--primary); flex-shrink:0;
+  }
+  .spirit-card.selected .spirit-select-badge{ background:var(--primary); color:#fff; }
   .spirits-filters{ display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
   .spirit-filter-btn{
     background:var(--bg-soft); padding:7px 14px; border-radius:20px; font-size:.78rem;
@@ -589,7 +607,15 @@
         <button class="spirit-filter-btn active" data-filter="todos">Todos</button>
         <button class="spirit-filter-btn" data-filter="tenemos">Ya los tenemos</button>
         <button class="spirit-filter-btn" data-filter="faltan">Nos faltan</button>
+        <button class="small-btn" id="toggleSelectBtn">☑️ Seleccionar</button>
         <button class="small-btn" id="exportSpiritsPdfBtn" style="margin-left:auto;">📄 Exportar a PDF</button>
+      </div>
+
+      <div id="spiritsBulkBar" class="spirits-bulk-bar" style="display:none;">
+        <span id="spiritsBulkCount">0 seleccionados</span>
+        <button class="small-btn" id="bulkMoveBtn">🗂️ Mover a grupo</button>
+        <button class="small-btn" id="bulkDeleteBtn">✕ Eliminar</button>
+        <button class="small-btn" id="bulkCancelBtn" style="margin-left:auto;">Cancelar</button>
       </div>
 
       <div id="spiritsGroupsWrap"></div>
@@ -1239,7 +1265,8 @@
     if(e.key === "Enter") $("addGroupBtn").click();
   });
 
-  function openMoveSpiritModal(spiritId, groups){
+  function openMoveSpiritModal(ids, groups){
+    const idList = Array.isArray(ids) ? ids : [ids];
     let html = '<h3>Mover a grupo</h3>';
     html += '<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:6px;">';
     html += '<button class="small-btn move-target" data-group="">📂 Sin grupo</button>';
@@ -1252,8 +1279,9 @@
     $("mCancel").addEventListener("click", closeModal);
     document.querySelectorAll(".move-target").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
-        await assignSpiritGroup(spiritId, btn.dataset.group || null);
+        await Promise.all(idList.map(id=>assignSpiritGroup(id, btn.dataset.group || null)));
         closeModal();
+        exitSelectionMode();
         renderSpirits();
       });
     });
@@ -1261,9 +1289,58 @@
 
   let spiritsFilter = "todos";
   let draggedSpiritId = null;
+  let selectionMode = false;
+  let selectedSpiritIds = new Set();
+
+  function exitSelectionMode(){
+    selectionMode = false;
+    selectedSpiritIds.clear();
+    $("spiritsBulkBar").style.display = "none";
+    $("toggleSelectBtn").textContent = "☑️ Seleccionar";
+    $("toggleSelectBtn").classList.remove("active");
+  }
+
+  function updateBulkBar(){
+    $("spiritsBulkCount").textContent = selectedSpiritIds.size + " seleccionados";
+  }
+
+  $("toggleSelectBtn").addEventListener("click", ()=>{
+    selectionMode = !selectionMode;
+    if(!selectionMode){
+      exitSelectionMode();
+    } else {
+      selectedSpiritIds.clear();
+      $("spiritsBulkBar").style.display = "flex";
+      $("toggleSelectBtn").textContent = "✕ Cancelar selección";
+      $("toggleSelectBtn").classList.add("active");
+      updateBulkBar();
+    }
+    renderSpirits();
+  });
+
+  $("bulkCancelBtn").addEventListener("click", ()=>{
+    exitSelectionMode();
+    renderSpirits();
+  });
+
+  $("bulkMoveBtn").addEventListener("click", async ()=>{
+    if(!selectedSpiritIds.size){ alert("Selecciona al menos un espíritu primero."); return; }
+    const groups = await getGroups();
+    openMoveSpiritModal(Array.from(selectedSpiritIds), groups);
+  });
+
+  $("bulkDeleteBtn").addEventListener("click", async ()=>{
+    if(!selectedSpiritIds.size){ alert("Selecciona al menos un espíritu primero."); return; }
+    if(confirm("¿Eliminar los " + selectedSpiritIds.size + " espíritus seleccionados?")){
+      await Promise.all(Array.from(selectedSpiritIds).map(id=>deleteSpirit(id)));
+      exitSelectionMode();
+      renderSpirits();
+    }
+  });
 
   function spiritCardHtml(s){
-    return '<div class="spirit-card ' + (s.checked ? "checked" : "") + '" data-id="' + s.id + '" draggable="true">'
+    const selected = selectedSpiritIds.has(s.id);
+    return '<div class="spirit-card ' + (s.checked ? "checked" : "") + (selectionMode ? " selectable" : "") + (selected ? " selected" : "") + '" data-id="' + s.id + '" draggable="' + (selectionMode ? "false" : "true") + '">'
       + '<label class="spirit-img-wrap">'
         + '<input type="file" class="spirit-file-input" accept="image/*" data-id="' + s.id + '">'
         + (s.img
@@ -1271,13 +1348,26 @@
             : '<div class="spirit-placeholder">👻</div>')
       + '</label>'
       + '<div class="spirit-glass"><span class="spirit-mark">✓</span></div>'
-      + '<button class="spirit-move-btn" data-id="' + s.id + '" title="Mover a grupo">🗂️</button>'
-      + '<button class="spirit-check-btn ' + (s.checked ? "checked" : "") + '" data-id="' + s.id + '" title="Marcar conseguido">' + (s.checked ? "✓" : "") + '</button>'
-      + '<button class="spirit-del-btn" data-id="' + s.id + '" title="Eliminar">✕</button>'
+      + (selectionMode
+          ? '<div class="spirit-select-overlay" data-id="' + s.id + '"><span class="spirit-select-badge">' + (selected ? "✓" : "") + '</span></div>'
+          : '<button class="spirit-move-btn" data-id="' + s.id + '" title="Mover a grupo">🗂️</button>'
+            + '<button class="spirit-check-btn ' + (s.checked ? "checked" : "") + '" data-id="' + s.id + '" title="Marcar conseguido">' + (s.checked ? "✓" : "") + '</button>'
+            + '<button class="spirit-del-btn" data-id="' + s.id + '" title="Eliminar">✕</button>')
     + '</div>';
   }
 
   function wireSpiritCardEvents(container, groups){
+    if(selectionMode){
+      container.querySelectorAll(".spirit-select-overlay").forEach(ov=>{
+        ov.addEventListener("click", ()=>{
+          const id = ov.dataset.id;
+          if(selectedSpiritIds.has(id)) selectedSpiritIds.delete(id); else selectedSpiritIds.add(id);
+          updateBulkBar();
+          renderSpirits();
+        });
+      });
+      return;
+    }
     container.querySelectorAll(".spirit-file-input").forEach(input=>{
       input.addEventListener("change", async (e)=>{
         const file = e.target.files[0];
