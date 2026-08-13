@@ -242,6 +242,27 @@
   .badge-check{background:var(--accent); color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:.7rem;}
 
   /* ---------- ESPIRITUS (tarjetas 3D, vidrio invertido) ---------- */
+  .spirits-group-form{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .spirits-group-form input{ flex:1; min-width:180px; }
+  .spirit-group-block{ margin-bottom:26px; }
+  .spirit-group-header{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .spirit-group-header h3{ margin:0; font-size:1.3rem; color:var(--accent); }
+  .spirit-group-header .spirit-group-count{ font-size:.75rem; opacity:.55; font-weight:700; }
+  .spirit-group-del{ margin-left:auto; }
+  .spirits-dropzone{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:16px;
+    border-radius:16px; transition:background-color .2s ease, box-shadow .2s ease; padding:4px;
+  }
+  .spirits-dropzone.drag-over{
+    background:var(--bg-soft); box-shadow:inset 0 0 0 3px var(--primary);
+  }
+  .spirit-card.dragging{ opacity:.4; }
+  .spirit-move-btn{
+    position:absolute; bottom:6px; left:6px; width:24px; height:24px; border-radius:50%;
+    background:rgba(255,255,255,.9); border:none; font-size:.7rem; display:flex; align-items:center;
+    justify-content:center; z-index:4; box-shadow:0 2px 6px rgba(0,0,0,.3); opacity:.85; transition:opacity .2s ease, transform .15s ease;
+  }
+  .spirit-move-btn:hover{ opacity:1; transform:scale(1.15); }
   .spirits-filters{ display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
   .spirit-filter-btn{
     background:var(--bg-soft); padding:7px 14px; border-radius:20px; font-size:.78rem;
@@ -436,7 +457,8 @@
   .small-btn:hover{ transform:translateY(-2px) scale(1.05); box-shadow:0 4px 10px rgba(0,0,0,.12); }
   .bar-fill{ transition:width .4s cubic-bezier(.34,1.56,.64,1); }
 
-  .spirit-card{ transition:transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s ease; }
+  .spirit-card{ transition:transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s ease; cursor:grab; }
+  .spirit-card.dragging{ cursor:grabbing; }
   .spirit-filter-btn:hover{ transform:translateY(-2px); opacity:.9; }
   .spirit-card:hover{
     transform:translateY(-5px) scale(1.045) rotateX(6deg) rotateY(-6deg);
@@ -533,8 +555,8 @@
     <section class="tab-panel" id="tab-galeria">
       <div class="section-head"><h2>Galería</h2></div>
       <div class="upload-box">
-        <label class="upload-label" for="photoInput">Subir foto 📷</label>
-        <input type="file" id="photoInput" accept="image/*">
+        <label class="upload-label" for="photoInput">Subir fotos 📷</label>
+        <input type="file" id="photoInput" accept="image/*" multiple>
         <p style="font-size:.75rem; opacity:.6; margin-top:10px;">Las fotos se guardan en este dispositivo</p>
       </div>
       <div class="gallery-grid" id="galleryGrid"></div>
@@ -550,16 +572,27 @@
     <section class="tab-panel" id="tab-espiritus">
       <div class="section-head">
         <h2>Espíritus <span id="spiritsCount" style="font-family:'Quicksand',sans-serif; font-size:.75rem; font-weight:700; opacity:.55; vertical-align:middle;"></span></h2>
-        <button class="fab" id="addSpiritBtn">+</button>
+        <div style="display:flex; gap:8px;">
+          <label class="small-btn" for="spiritsMultiInput" style="cursor:pointer;">📤 Subir varias</label>
+          <input type="file" id="spiritsMultiInput" accept="image/*" multiple style="display:none;">
+          <button class="fab" id="addSpiritBtn">+</button>
+        </div>
       </div>
-      <p style="font-size:.82rem; opacity:.65; margin:-8px 0 14px;">Toca un cuadro para subir el espíritu. Marca el check cuando ya lo tengan para que se "destape".</p>
+      <p style="font-size:.82rem; opacity:.65; margin:-8px 0 14px;">Toca un cuadro para subir el espíritu, o usa "Subir varias" para crear varios cuadros de una vez. Marca el check cuando ya lo tengan para que se "destape". Arrastra un cuadro a un grupo (o usa 🗂️ en celular) para organizarlo.</p>
+
+      <div class="spirits-group-form">
+        <input type="text" id="newGroupInput" placeholder="Nombre del grupo (ej. Espíritus de agua)">
+        <button class="small-btn" id="addGroupBtn">+ Crear grupo</button>
+      </div>
+
       <div class="spirits-filters" id="spiritsFilters">
         <button class="spirit-filter-btn active" data-filter="todos">Todos</button>
         <button class="spirit-filter-btn" data-filter="tenemos">Ya los tenemos</button>
         <button class="spirit-filter-btn" data-filter="faltan">Nos faltan</button>
         <button class="small-btn" id="exportSpiritsPdfBtn" style="margin-left:auto;">📄 Exportar a PDF</button>
       </div>
-      <div class="spirits-grid" id="spiritsGrid"></div>
+
+      <div id="spiritsGroupsWrap"></div>
     </section>
 
     <!-- PERSONALIZAR -->
@@ -1044,17 +1077,29 @@
   $("lightbox").addEventListener("click", e=>{ if(e.target.id==="lightbox") $("lightbox").style.display="none"; });
 
   $("photoInput").addEventListener("change", async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    if(file.size > 3*1024*1024){
-      alert("Esa foto pesa más que nuestros problemas. Que sea menor a 3MB.");
-      e.target.value = "";
-      return;
+    const files = Array.from(e.target.files);
+    if(!files.length) return;
+
+    const tooBig = files.filter(f=>f.size > 3*1024*1024);
+    const valid = files.filter(f=>f.size <= 3*1024*1024);
+    if(tooBig.length){
+      alert(tooBig.length + " foto(s) pesan más de 3MB y no se van a subir.");
     }
-    const caption = prompt("¿Le ponemos algo chismoso de pie de foto? (opcional)") || "";
-    const ok = await uploadPhoto(file, caption);
+    if(!valid.length){ e.target.value = ""; return; }
+
+    const caption = valid.length === 1
+      ? (prompt("¿Le ponemos algo chismoso de pie de foto? (opcional)") || "")
+      : "";
+
+    const label = document.querySelector('label[for="photoInput"]');
+    const originalLabel = label ? label.textContent : "";
+    if(label) label.textContent = valid.length > 1 ? "Subiendo " + valid.length + " fotos..." : "Subiendo...";
+
+    await Promise.all(valid.map(f=>uploadPhoto(f, caption)));
+
+    if(label) label.textContent = originalLabel;
     e.target.value = "";
-    if(ok) renderGallery();
+    renderGallery();
   });
 
   /* ================= RETOS ================= */
@@ -1132,7 +1177,7 @@
   async function getSpirits(){
     const { data, error } = await sb.from("espiritus").select("*").order("created_at", {ascending:true});
     if(error){ console.error(error); return []; }
-    return data.map(d=>({ id:d.id, img:d.img_url, checked:d.checked }));
+    return data.map(d=>({ id:d.id, img:d.img_url, checked:d.checked, grupoId:d.grupo_id }));
   }
   async function addSpirit(){
     const { error } = await sb.from("espiritus").insert({ id:uid(), img_url:null, checked:false });
@@ -1148,6 +1193,12 @@
     if(updErr){ console.error(updErr); return false; }
     return true;
   }
+  async function addSpiritWithImage(file){
+    const id = uid();
+    const { error } = await sb.from("espiritus").insert({ id, img_url:null, checked:false });
+    if(error){ console.error(error); return false; }
+    return await uploadSpiritImage(id, file);
+  }
   async function toggleSpirit(id, checked){
     const { error } = await sb.from("espiritus").update({checked}).eq("id", id);
     if(error) console.error(error);
@@ -1157,47 +1208,77 @@
     if(error) console.error(error);
   }
 
+  /* --- Grupos --- */
+  async function getGroups(){
+    const { data, error } = await sb.from("grupos_espiritus").select("*").order("created_at", {ascending:true});
+    if(error){ console.error(error); return []; }
+    return data;
+  }
+  async function addGroup(nombre){
+    const { error } = await sb.from("grupos_espiritus").insert({ id:uid(), nombre });
+    if(error){ alert("No se pudo crear el grupo."); console.error(error); return false; }
+    return true;
+  }
+  async function deleteGroup(id){
+    await sb.from("espiritus").update({ grupo_id:null }).eq("grupo_id", id);
+    const { error } = await sb.from("grupos_espiritus").delete().eq("id", id);
+    if(error) console.error(error);
+  }
+  async function assignSpiritGroup(spiritId, grupoId){
+    const { error } = await sb.from("espiritus").update({ grupo_id: grupoId }).eq("id", spiritId);
+    if(error) console.error(error);
+  }
+
+  $("addGroupBtn").addEventListener("click", async ()=>{
+    const nombre = $("newGroupInput").value.trim();
+    if(!nombre) return;
+    const ok = await addGroup(nombre);
+    if(ok){ $("newGroupInput").value = ""; renderSpirits(); }
+  });
+  $("newGroupInput").addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") $("addGroupBtn").click();
+  });
+
+  function openMoveSpiritModal(spiritId, groups){
+    let html = '<h3>Mover a grupo</h3>';
+    html += '<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:6px;">';
+    html += '<button class="small-btn move-target" data-group="">📂 Sin grupo</button>';
+    groups.forEach(g=>{
+      html += '<button class="small-btn move-target" data-group="'+g.id+'">🗂️ '+escapeHtml(g.nombre)+'</button>';
+    });
+    html += '</div>';
+    html += '<div class="modal-actions"><button class="btn-ghost" id="mCancel">Cancelar</button></div>';
+    openModal(html);
+    $("mCancel").addEventListener("click", closeModal);
+    document.querySelectorAll(".move-target").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        await assignSpiritGroup(spiritId, btn.dataset.group || null);
+        closeModal();
+        renderSpirits();
+      });
+    });
+  }
+
   let spiritsFilter = "todos";
+  let draggedSpiritId = null;
 
-  async function renderSpirits(){
-    const all = await getSpirits();
-    const grid = $("spiritsGrid");
+  function spiritCardHtml(s){
+    return '<div class="spirit-card ' + (s.checked ? "checked" : "") + '" data-id="' + s.id + '" draggable="true">'
+      + '<label class="spirit-img-wrap">'
+        + '<input type="file" class="spirit-file-input" accept="image/*" data-id="' + s.id + '">'
+        + (s.img
+            ? '<img class="spirit-img" src="' + s.img + '" alt="espíritu" loading="lazy">'
+            : '<div class="spirit-placeholder">👻</div>')
+      + '</label>'
+      + '<div class="spirit-glass"><span class="spirit-mark">✓</span></div>'
+      + '<button class="spirit-move-btn" data-id="' + s.id + '" title="Mover a grupo">🗂️</button>'
+      + '<button class="spirit-check-btn ' + (s.checked ? "checked" : "") + '" data-id="' + s.id + '" title="Marcar conseguido">' + (s.checked ? "✓" : "") + '</button>'
+      + '<button class="spirit-del-btn" data-id="' + s.id + '" title="Eliminar">✕</button>'
+    + '</div>';
+  }
 
-    const doneCount = all.filter(s=>s.checked).length;
-    const countEl = $("spiritsCount");
-    if(countEl) countEl.textContent = all.length ? "(" + doneCount + "/" + all.length + ")" : "";
-
-    let spirits = all;
-    if(spiritsFilter === "tenemos") spirits = all.filter(s=>s.checked);
-    if(spiritsFilter === "faltan") spirits = all.filter(s=>!s.checked);
-
-    if(!all.length){
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">Aún no hay cuadros. Toca el + para agregar el primer espíritu. 👻</div>';
-      return;
-    }
-    if(!spirits.length){
-      const msg = spiritsFilter === "tenemos"
-        ? "Todavía no tienen ninguno marcado como conseguido."
-        : "¡No falta ninguno! Ya los tienen todos. 🎉";
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">' + msg + '</div>';
-      return;
-    }
-
-    grid.innerHTML = spirits.map(s=>{
-      return '<div class="spirit-card ' + (s.checked ? "checked" : "") + '" data-id="' + s.id + '">'
-        + '<label class="spirit-img-wrap">'
-          + '<input type="file" class="spirit-file-input" accept="image/*" data-id="' + s.id + '">'
-          + (s.img
-              ? '<img class="spirit-img" src="' + s.img + '" alt="espíritu" loading="lazy">'
-              : '<div class="spirit-placeholder">👻</div>')
-        + '</label>'
-        + '<div class="spirit-glass"><span class="spirit-mark">✓</span></div>'
-        + '<button class="spirit-check-btn ' + (s.checked ? "checked" : "") + '" data-id="' + s.id + '" title="Marcar conseguido">' + (s.checked ? "✓" : "") + '</button>'
-        + '<button class="spirit-del-btn" data-id="' + s.id + '" title="Eliminar">✕</button>'
-      + '</div>';
-    }).join("");
-
-    grid.querySelectorAll(".spirit-file-input").forEach(input=>{
+  function wireSpiritCardEvents(container, groups){
+    container.querySelectorAll(".spirit-file-input").forEach(input=>{
       input.addEventListener("change", async (e)=>{
         const file = e.target.files[0];
         if(!file) return;
@@ -1211,18 +1292,113 @@
         if(ok) renderSpirits();
       });
     });
-
-    grid.querySelectorAll(".spirit-check-btn").forEach(btn=>{
+    container.querySelectorAll(".spirit-check-btn").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
-        const item = spirits.find(x=>x.id === btn.dataset.id);
-        if(item){ await toggleSpirit(item.id, !item.checked); renderSpirits(); }
+        const card = btn.closest(".spirit-card");
+        const nowChecked = !card.classList.contains("checked");
+        await toggleSpirit(btn.dataset.id, nowChecked);
+        renderSpirits();
       });
     });
-
-    grid.querySelectorAll(".spirit-del-btn").forEach(btn=>{
+    container.querySelectorAll(".spirit-del-btn").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         if(confirm("¿Quitar este cuadro de espíritu?")){
           await deleteSpirit(btn.dataset.id);
+          renderSpirits();
+        }
+      });
+    });
+    container.querySelectorAll(".spirit-move-btn").forEach(btn=>{
+      btn.addEventListener("click", ()=>openMoveSpiritModal(btn.dataset.id, groups));
+    });
+    container.querySelectorAll(".spirit-card").forEach(card=>{
+      card.addEventListener("dragstart", (e)=>{
+        draggedSpiritId = card.dataset.id;
+        card.classList.add("dragging");
+        e.dataTransfer.setData("text/plain", card.dataset.id);
+        e.dataTransfer.effectAllowed = "move";
+      });
+      card.addEventListener("dragend", ()=>{
+        card.classList.remove("dragging");
+        draggedSpiritId = null;
+      });
+    });
+  }
+
+  function wireDropzone(zone){
+    zone.addEventListener("dragover", (e)=>{
+      e.preventDefault();
+      zone.classList.add("drag-over");
+    });
+    zone.addEventListener("dragleave", ()=>{
+      zone.classList.remove("drag-over");
+    });
+    zone.addEventListener("drop", async (e)=>{
+      e.preventDefault();
+      zone.classList.remove("drag-over");
+      const id = e.dataTransfer.getData("text/plain") || draggedSpiritId;
+      if(!id) return;
+      const grupoId = zone.dataset.group || null;
+      await assignSpiritGroup(id, grupoId);
+      renderSpirits();
+    });
+  }
+
+  async function renderSpirits(){
+    const [all, groups] = await Promise.all([getSpirits(), getGroups()]);
+    const wrap = $("spiritsGroupsWrap");
+
+    const doneCount = all.filter(s=>s.checked).length;
+    const countEl = $("spiritsCount");
+    if(countEl) countEl.textContent = all.length ? "(" + doneCount + "/" + all.length + ")" : "";
+
+    if(!all.length && !groups.length){
+      wrap.innerHTML = '<div class="empty-state">Aún no hay cuadros. Toca el + para agregar el primer espíritu. 👻</div>';
+      return;
+    }
+
+    let filtered = all;
+    if(spiritsFilter === "tenemos") filtered = all.filter(s=>s.checked);
+    if(spiritsFilter === "faltan") filtered = all.filter(s=>!s.checked);
+
+    const blocks = [];
+
+    groups.forEach(g=>{
+      const spirits = filtered.filter(s=>s.grupoId === g.id);
+      blocks.push(
+        '<div class="spirit-group-block">'
+          + '<div class="spirit-group-header">'
+            + '<h3>🗂️ ' + escapeHtml(g.nombre) + '</h3>'
+            + '<span class="spirit-group-count">(' + spirits.length + ')</span>'
+            + '<button class="small-btn spirit-group-del" data-id="' + g.id + '">Eliminar grupo</button>'
+          + '</div>'
+          + '<div class="spirits-dropzone" data-group="' + g.id + '">'
+            + (spirits.length ? spirits.map(spiritCardHtml).join("") : '<div class="empty-state" style="grid-column:1/-1;">Arrastra o mueve un espíritu aquí.</div>')
+          + '</div>'
+        + '</div>'
+      );
+    });
+
+    const sinGrupo = filtered.filter(s=>!s.grupoId || !groups.some(g=>g.id === s.grupoId));
+    blocks.push(
+      '<div class="spirit-group-block">'
+        + '<div class="spirit-group-header"><h3>👻 Sin grupo</h3><span class="spirit-group-count">(' + sinGrupo.length + ')</span></div>'
+        + '<div class="spirits-dropzone" data-group="">'
+          + (sinGrupo.length ? sinGrupo.map(spiritCardHtml).join("") : '<div class="empty-state" style="grid-column:1/-1;">' + (all.length ? "Nada por aquí." : "Toca el + para agregar el primer espíritu. 👻") + '</div>')
+        + '</div>'
+      + '</div>'
+    );
+
+    wrap.innerHTML = blocks.join("");
+
+    wrap.querySelectorAll(".spirits-dropzone").forEach(zone=>{
+      wireDropzone(zone);
+      wireSpiritCardEvents(zone, groups);
+    });
+    wrap.querySelectorAll(".spirit-group-del").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        if(confirm("¿Eliminar este grupo? Los espíritus dentro vuelven a \"Sin grupo\".")){
+          await deleteGroup(btn.dataset.id);
           renderSpirits();
         }
       });
@@ -1231,6 +1407,28 @@
 
   $("addSpiritBtn").addEventListener("click", async ()=>{
     await addSpirit();
+    renderSpirits();
+  });
+
+  $("spiritsMultiInput").addEventListener("change", async (e)=>{
+    const files = Array.from(e.target.files);
+    if(!files.length) return;
+
+    const tooBig = files.filter(f=>f.size > 4*1024*1024);
+    const valid = files.filter(f=>f.size <= 4*1024*1024);
+    if(tooBig.length){
+      alert(tooBig.length + " imagen(es) pesan más de 4MB y no se van a subir.");
+    }
+    if(!valid.length){ e.target.value = ""; return; }
+
+    const label = document.querySelector('label[for="spiritsMultiInput"]');
+    const originalLabel = label ? label.textContent : "";
+    if(label) label.textContent = "Subiendo " + valid.length + "...";
+
+    await Promise.all(valid.map(f=>addSpiritWithImage(f)));
+
+    if(label) label.textContent = originalLabel;
+    e.target.value = "";
     renderSpirits();
   });
 
@@ -1486,6 +1684,7 @@
     sb.channel("cambios-fotos").on("postgres_changes", {event:"*", schema:"public", table:"fotos"}, ()=>renderGallery()).subscribe();
     sb.channel("cambios-retos").on("postgres_changes", {event:"*", schema:"public", table:"retos"}, ()=>renderChallenges()).subscribe();
     sb.channel("cambios-espiritus").on("postgres_changes", {event:"*", schema:"public", table:"espiritus"}, ()=>renderSpirits()).subscribe();
+    sb.channel("cambios-grupos-espiritus").on("postgres_changes", {event:"*", schema:"public", table:"grupos_espiritus"}, ()=>renderSpirits()).subscribe();
     sb.channel("cambios-config").on("postgres_changes", {event:"*", schema:"public", table:"config", filter:"clave=eq.palabrasFondo"}, ()=>{ renderWordsBg(); syncWordsInput(); }).subscribe();
   }
 
